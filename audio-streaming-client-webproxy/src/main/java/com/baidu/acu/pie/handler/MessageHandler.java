@@ -67,7 +67,7 @@ public class MessageHandler {
      */
     @OnMessage
     public void onMessage(Session session, byte[] messages) {
-        audioHandlerService.Handle(messages, session);
+        audioHandlerService.handle(session, messages);
     }
 
     /**

@@ -32,6 +32,8 @@ public class AudioAsrHandler implements Runnable {
     private StreamContext streamContext;
     private AsrClient asrClient;
     private String audioId = null;
+    private volatile boolean asrFinish = false;
+    private volatile AsrResult asrTempResult = null;
 
 
     public AudioAsrHandler(Session session, AudioHandlerService audioHandlerService) {
@@ -39,6 +41,21 @@ public class AudioAsrHandler implements Runnable {
         this.audioHandlerService = audioHandlerService;
 
         queue = new ConcurrentLinkedQueue<>();
+    }
+
+    /**
+     * 设置asr识别结束，供外层调用
+     */
+    public void setAsrFinish() {
+        asrFinish = true;
+    }
+
+    /**
+     * 向队列中传送数据
+     */
+    public synchronized void offer(AudioData audioData) {
+        queue.add(audioData);
+
     }
 
     @Override
@@ -62,12 +79,15 @@ public class AudioAsrHandler implements Runnable {
                     waitingCount = 0;
                     send(audioData);
                 } else {
-                    Thread.sleep(100);
+                    if (!asrFinish) {
+                        Thread.sleep(100);
+                    }
                     waitingCount ++;
                 }
             }
             streamContext.complete();
             streamContext.getFinishLatch().await();
+            sendFinishResult();
 
         } catch (Exception e) {
             log.info("asr recognition occur exception:" + e.getMessage());
@@ -105,28 +125,40 @@ public class AudioAsrHandler implements Runnable {
         requestMetaData.setSendPackageRatio(1);
         requestMetaData.setSleepRatio(1);
         requestMetaData.setTimeoutMinutes(120);
-        requestMetaData.setEnableFlushData(false);
+        requestMetaData.setEnableFlushData(true);
 
         return requestMetaData;
     }
 
     /**
-     * 处理识别结果
+     * 处理识别结果,并发送给客户端
+     * 为了将asr识别结束标志也一并发送出去，当前结果先缓存，发送上一次的结果
      */
     private void handleRecognitionResult (RecognitionResult result) {
-        AsrResult asrResult = new AsrResult();
-        asrResult.setAsrResult(result.getResult());
-        asrResult.setCompleted(result.isCompleted());
-        asrResult.setAudioId(audioId);
-        WebSocketUtil.sendMsgToClient(session, ServerResponse.successStrResponse(asrResult, RequestType.ASR));
 
+        if(asrTempResult == null) {
+            asrTempResult = new AsrResult();
+            asrTempResult.setAsrResult(result.getResult());
+            asrTempResult.setCompleted(result.isCompleted());
+            asrTempResult.setAudioId(audioId);
+            return;
+        }
+        WebSocketUtil.sendMsgToClient(session, ServerResponse.successStrResponse(asrTempResult, RequestType.ASR));
+        asrTempResult = new AsrResult();
+        asrTempResult.setAsrResult(result.getResult());
+        asrTempResult.setCompleted(result.isCompleted());
+        asrTempResult.setAudioId(audioId);
     }
 
     /**
-     * 向队列中传送数据
+     * asr解析结束时，发送缓存数据以及finish标志
      */
-    public synchronized void offer(AudioData audioData) {
-        queue.add(audioData);
+    private void sendFinishResult() {
+        if (asrTempResult != null) {
+            asrTempResult.setFinished(true);
+            WebSocketUtil.sendMsgToClient(session, ServerResponse.successStrResponse(asrTempResult, RequestType.ASR));
+            asrTempResult = null;
+        }
 
     }
 
@@ -143,6 +175,7 @@ public class AudioAsrHandler implements Runnable {
             }
             streamContext.complete();
             streamContext.getFinishLatch().await();
+            sendFinishResult();
             audioId = null;
             initStreamContext();
             return;

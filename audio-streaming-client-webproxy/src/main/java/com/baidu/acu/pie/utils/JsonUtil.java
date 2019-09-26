@@ -20,13 +20,26 @@ public class JsonUtil {
     public static ObjectMapper objectMapper = createObjectMapper();
 
     /**
+     * 对字符串json格式进行校验，false为非json格式
+     */
+    public static boolean checkJsonFormat(String json) {
+        try {
+            objectMapper.readTree(json);
+        } catch (Exception e) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * 从json 字符串中解析数据
-     * @throws WebProxyException: json解析失败，或者没有key时抛出异常
      */
     public static String parseJson(String json, String key) {
         JsonNode value = parseJsonNode(json, key);
+
+        // 当不存在key时，直接返回null，无须异常处理
         if (value == null) {
-            throw new WebProxyException("key:" + key + "is not in json " + json);
+            return null;
         }
 
         // 如果当前node下面只有一个value(没有node结构)，则使用asText()方法；若使用toString()则返回字符串增加了多余的""
@@ -55,6 +68,10 @@ public class JsonUtil {
         }
     }
 
+    /**
+     * 解析json
+     * @throws WebProxyException: json转化错误，初始字符串非json格式
+     */
     private static JsonNode parseJsonNode(String json, String key) {
         JsonNode node;
         try {

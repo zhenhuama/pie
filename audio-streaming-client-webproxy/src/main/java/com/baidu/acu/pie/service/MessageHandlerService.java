@@ -28,6 +28,13 @@ public class MessageHandlerService {
 
     public void handle(Session session, String jsonMessage) {
 
+        if (!JsonUtil.checkJsonFormat(jsonMessage)) {
+            WebSocketUtil.sendMsgToClient(session, ServerResponse.failureStrResponse(
+                    "post data does not meet the json requirement", RequestType.UNKNOWN
+            ));
+            return;
+        }
+
         if (!JsonUtil.keyExist(jsonMessage, Constant.REQUEST_TYPE)) {
             WebSocketUtil.sendMsgToClient(session, ServerResponse.failureStrResponse(
                     "post data does not meet the requirements", RequestType.UNKNOWN));
